@@ -1,6 +1,14 @@
 from flask import Flask, request, redirect, url_for, render_template_string
 import os
 
+EQPMNT_ATTR = ['防禦','智力','敏捷','幸運','力量','跳躍','攻擊','移動速度','體力']
+
+EQPMNT_ORDER = {
+    '披風': ['力量','智力','敏捷','防禦','幸運','跳躍','攻擊','移動速度','體力'],
+    '套服': ['智力','敏捷','防禦','幸運','力量','跳躍','攻擊','移動速度','體力'],
+    'default': EQPMNT_ATTR
+}
+
 EQPMNT = {
     '裝備': ['頭盔','耳飾','上衣','套服','下衣','鞋子','手套','盾牌','披風'],
     '武器': {
@@ -8,7 +16,7 @@ EQPMNT = {
         '物理': ['單手斧','單手棍','短劍','弓','弩','手槍','指虎','槍','矛','拳套','單手劍','雙手劍','雙手斧','雙手棍']
     },
     '屬性': {
-        '裝備': ['防禦','幸運','力量','智力','敏捷','跳躍','攻擊','移動速度','體力'],
+        '裝備': EQPMNT_ATTR,
         '武器': {
             '魔法': ['魔力'],
             '物理': ['攻擊','命中']
@@ -40,7 +48,7 @@ def save_inventory(inventory):
 
 def sort_inventory(inv_list):
     equipment_order = ['頭盔','耳飾','上衣','套服','下衣','鞋子','手套','盾牌','披風']
-    attribute_order = EQPMNT['屬性']['裝備']
+    attribute_order = None
     weapon_order = WEAPON_ORDER
     weapon_attr_order = EQPMNT['屬性']['武器']['物理'] + EQPMNT['屬性']['武器']['魔法']
     def sort_key(item):
@@ -51,6 +59,7 @@ def sort_inventory(inv_list):
             is_equipment = any(name.startswith(e) for e in equipment_order)
             if is_equipment:
                 order_index = next((i for i, prefix in enumerate(equipment_order) if name.startswith(prefix)), len(equipment_order))
+                attribute_order = EQPMNT_ORDER.get(name[:2], EQPMNT_ORDER['default'])
                 attr_index = next((i for i, attr in enumerate(attribute_order) if name.endswith(attr)), len(attribute_order))
                 return (0, order_index, attr_index, name, rate_order.get(rate, 99))
             else:
