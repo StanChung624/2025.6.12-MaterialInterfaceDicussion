@@ -89,10 +89,25 @@ HTML_TEMPLATE = '''
       border-radius: 4px;
       font-size: 10px;
     }
+    .image-container {
+      position: relative;
+      display: inline-block;
+    }
     .inventory-item img {
       width: 32px;
       height: 32px;
       flex-shrink: 0;
+    }
+    .quantity-badge {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      font-size: 10px;
+      padding: 1px 3px;
+      border-radius: 3px;
+      font-family: monospace;
     }
     .highlight {
       font-weight: bold;
@@ -196,6 +211,22 @@ HTML_TEMPLATE = '''
         document.getElementById("count").value = qty;
       }, 50);
     }
+    function updatePad(val) {
+      padValue.value = val;
+      const grid = document.querySelector('.inventory-grid');
+      const items = Array.from(grid.querySelectorAll('.inventory-item'));
+      // Clear grid
+      grid.innerHTML = '';
+      // Prepend empty blocks
+      for (let i = 0; i < parseInt(val); i++) {
+        const spacer = document.createElement('div');
+        grid.appendChild(spacer);
+      }
+      // Append all items
+      for (const item of items) {
+        grid.appendChild(item);
+      }
+    }
   </script>
 </head>
 <body>
@@ -232,13 +263,20 @@ HTML_TEMPLATE = '''
       
       <label for="count">數量</label>
       <input type="number" name="count" id="count" min="0" value="{{ form_data.count }}"><br>
+
+      <label for="pad">前面空格</label>
+      <input type="range" id="pad" name="pad" min="0" max="3" value="{{ form_data.pad }}" oninput="updatePad(this.value)">
+      <output id="padValue">{{ form_data.pad }}</output><br>
       
       <button type="submit">新增 / 更新</button>
     </form>
   </div>
-  <div class="inventory-panel">
+    <div class="inventory-panel">
     <h2>庫存預覽</h2>
     <div class="inventory-grid">
+    {% for _ in range(form_data.pad | int) %}
+      <div></div>
+    {% endfor %}
     {% set image_map = {"10%": "image/po_10.32.png", "60%": "image/po_60.32.png", "100%": "image/po_99.32.png"} %}
     {% for entry in inventory %}
       {% set clean_entry = entry.strip(', ') %}
@@ -246,9 +284,12 @@ HTML_TEMPLATE = '''
       {% if qty != "0" %}
         {% set scroll_name, rate = scroll_part.rsplit("卷軸", 1) %}
         <div class="inventory-item" onclick="logClick('{{ entry }}')">
-          <img src="{{ url_for('static', filename=image_map.get(rate, '')) }}" alt="{{ rate }}">
+          <div class="image-container">
+            <img src="{{ url_for('static', filename=image_map.get(rate, '')) }}" alt="{{ rate }}">
+            <div class="quantity-badge">×{{ qty }}</div>
+          </div>
           <span {% if highlight == entry %}class="highlight"{% endif %}>
-            {{ scroll_name }}{{ rate }} ×{{ qty }}
+            {{ scroll_name }}{{ rate }}
           </span>
         </div>
       {% endif %}
@@ -266,7 +307,8 @@ def index():
         "kind": "裝備",
         "wtype": "魔法",
         "rate": "100%",
-        "count": "1"
+        "count": "1",
+        "pad": "0"
     }
     return render_template_string(HTML_TEMPLATE, eqpmnt=EQPMNT, inventory=inventory, form_data=form_data, error=None, highlight=None)
 
@@ -278,18 +320,21 @@ def add():
     attr = request.form.get("attr", "")
     rate = request.form.get("rate", "")
     count = request.form.get("count", "")
+    pad = int(request.form.get("pad", "0"))
+    prefix_o = "O" * pad
     error = None
     form_data = {
         "kind": kind,
         "wtype": wtype,
         "rate": rate,
-        "count": count
+        "count": count,
+        "pad": str(pad)
     }
     if not cat or not attr or not count.isdigit() or int(count) < 0:
         error = "請填寫完整且正確的資訊"
         inventory = sort_inventory(load_inventory())
         return render_template_string(HTML_TEMPLATE, eqpmnt=EQPMNT, inventory=inventory, form_data=form_data, error=error, highlight=None)
-    item = f"{cat}{attr}卷軸{rate},{count}"
+    item = f"{prefix_o}{cat}{attr}卷軸{rate},{count}"
     prefix = item.rsplit(",", 1)[0]
 
     inventory = sort_inventory(load_inventory())
