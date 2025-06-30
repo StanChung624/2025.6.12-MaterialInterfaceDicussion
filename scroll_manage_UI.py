@@ -394,4 +394,4 @@ def add():
     return render_template_string(HTML_TEMPLATE, eqpmnt=EQPMNT, inventory=inventory, form_data=form_data, error=None, highlight=item)
 
 if __name__ == "__main__":
-    app.run(debug=True)
+  app.run(debug=True, host="127.0.0.1", port=5000)
