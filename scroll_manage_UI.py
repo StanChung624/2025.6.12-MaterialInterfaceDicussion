@@ -42,8 +42,6 @@ def save_inventory(inventory):
     with open(CSV_PATH, 'w', encoding='utf-8') as f:
         f.write("name,quantity,\n")
         for item in inventory:
-            if ',' != item[-1]:
-                item += ','
             f.write(item + "\n")
 
 def sort_inventory(inv_list):
@@ -170,38 +168,63 @@ HTML_TEMPLATE = '''
       document.getElementById("wtype").addEventListener("change", updateCategory);
       updateCategory();
     };
+    let currentEditEntry = "";
+
     function logClick(entry) {
-      console.log("Clicked entry:", entry);
+      const cleanEntry = entry.trim().replace(/,+$/, "");
+      currentEditEntry = cleanEntry;
+      const lastComma = cleanEntry.lastIndexOf(",");
+      const scrollPart = cleanEntry.substring(0, lastComma);
+      const qty = cleanEntry.substring(lastComma + 1);
+      document.getElementById("modalItemName").textContent = scrollPart;
+      document.getElementById("modalItemQty").value = qty;
+      document.getElementById("editModal").style.display = "block";
+    }
+
+    function closeModal() {
+      document.getElementById("editModal").style.display = "none";
+    }
+
+    function confirmEdit() {
+      const qty = document.getElementById("modalItemQty").value;
+
+      // Avoid splitting rate and qty together
+      const baseEntry = currentEditEntry.trim().replace(/,+$/, "");
+      const lastComma = baseEntry.lastIndexOf(",");
+      const scrollPart = baseEntry.substring(0, lastComma);
+      const [scrollName, rate] = scrollPart.split("卷軸");
+
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = "/add";
+
+      const hiddenFields = {
+        kind: '', wtype: '', cat: '', attr: '', rate: rate, count: qty,
+        pad: document.getElementById("pad")?.value || "0"
+      };
 
       const eqpmnt = {{ eqpmnt | tojson }};
-      const cleanEntry = entry.trim().replace(/,+$/, "");
-      const [scrollPart, qty] = cleanEntry.split(",");
-      const [namePart, rate] = scrollPart.split("卷軸");
-      let kind = "裝備";
-      let wtype = "";
-      let cat = "";
-      let attr = "";
+      const name = scrollName;
 
-      if (eqpmnt["裝備"].includes(namePart.slice(0, 2))) {
-        kind = "裝備";
-        wtype = "";
-        for (let a of eqpmnt["屬性"]["裝備"]) {
-          if (namePart.endsWith(a)) {
-            attr = a;
-            cat = namePart.slice(0, namePart.length - a.length);
+      if (eqpmnt["裝備"].some(e => name.startsWith(e))) {
+        hiddenFields.kind = "裝備";
+        for (const attr of eqpmnt["屬性"]["裝備"]) {
+          if (name.endsWith(attr)) {
+            hiddenFields.attr = attr;
+            hiddenFields.cat = name.slice(0, name.length - attr.length);
             break;
           }
         }
       } else {
-        kind = "武器";
-        for (let type of ["魔法", "物理"]) {
-          for (let base of eqpmnt["武器"][type]) {
-            if (namePart.startsWith(base)) {
-              cat = base;
-              wtype = type;
-              for (let a of eqpmnt["屬性"]["武器"][type]) {
-                if (namePart.endsWith(a)) {
-                  attr = a;
+        hiddenFields.kind = "武器";
+        for (const type of ["物理", "魔法"]) {
+          for (const base of eqpmnt["武器"][type]) {
+            if (name.startsWith(base)) {
+              hiddenFields.cat = base;
+              hiddenFields.wtype = type;
+              for (const attr of eqpmnt["屬性"]["武器"][type]) {
+                if (name.endsWith(attr)) {
+                  hiddenFields.attr = attr;
                   break;
                 }
               }
@@ -210,15 +233,16 @@ HTML_TEMPLATE = '''
         }
       }
 
-      document.getElementById("kind").value = kind;
-      document.getElementById("wtype").value = wtype;
-      updateCategory();
-      setTimeout(() => {
-        document.getElementById("cat").value = cat;
-        document.getElementById("attr").value = attr;
-        document.getElementById("rate").value = rate;
-        document.getElementById("count").value = qty;
-      }, 50);
+      for (let k in hiddenFields) {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = k;
+        input.value = hiddenFields[k];
+        form.appendChild(input);
+      }
+
+      document.body.appendChild(form);
+      form.submit();
     }
     function updatePad(val) {
       padValue.value = val;
@@ -306,6 +330,15 @@ HTML_TEMPLATE = '''
     </div>
   </div>
 </body>
+  <div id="editModal" style="display:none; position:fixed; top:30%; left:50%; transform:translate(-50%, -30%);
+    background:white; border:1px solid #ccc; padding:20px; z-index:999;">
+    <h3>編輯卷軸數量</h3>
+    <p id="modalItemName" style="font-weight:bold;"></p>
+    <input type="number" id="modalItemQty" min="0" />
+    <br><br>
+    <button onclick="confirmEdit()">儲存</button>
+    <button onclick="closeModal()">取消</button>
+  </div>
 </html>
 '''
 
@@ -342,8 +375,8 @@ def add():
         error = "請填寫完整且正確的資訊"
         inventory = sort_inventory(load_inventory())
         return render_template_string(HTML_TEMPLATE, eqpmnt=EQPMNT, inventory=inventory, form_data=form_data, error=error, highlight=None)
-    item = f"{cat}{attr}卷軸{rate},{count}"
-    prefix = item.rsplit(",", 1)[0]
+    item = f"{cat}{attr}卷軸{rate},{count},"
+    prefix = f"{cat}{attr}卷軸{rate}"
 
     inventory = sort_inventory(load_inventory())
     found = False
@@ -353,7 +386,8 @@ def add():
             found = True
             break
     if not found:
-        inventory.append(item)
+        # inventory.append(item)  # 原行，註解掉避免新增
+        pass  # 數量修改僅限已有項目
 
     inventory = sort_inventory(inventory)
     save_inventory(inventory)
