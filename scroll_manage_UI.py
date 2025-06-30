@@ -1,5 +1,7 @@
 from flask import Flask, request, redirect, url_for, render_template_string
 import os
+import logging
+from datetime import datetime
 
 EQPMNT_ATTR = ['防禦','智力','敏捷','幸運','力量','跳躍','攻擊','移動速度','體力']
 
@@ -30,6 +32,25 @@ WEAPON_ORDER = ['單手劍','單手斧','單手棍','短劍',
                 '槍','矛','弓','弩','拳套','指虎','手槍']
 
 CSV_PATH = "Inventory.csv"
+
+def validate_form(form):
+    required = ['cat', 'attr', 'count']
+    for field in required:
+        if not form.get(field):
+            return False
+    try:
+        return int(form.get('count', -1)) >= 0
+    except:
+        return False
+
+def build_item_string(cat, attr, rate, count):
+    return f"{cat}{attr}卷軸{rate},{count},"
+
+def find_item_index(inventory, prefix):
+    for i, entry in enumerate(inventory):
+        if entry.startswith(prefix + ","):
+            return i
+    return -1
 
 def load_inventory():
     if os.path.exists(CSV_PATH):
@@ -68,7 +89,21 @@ def sort_inventory(inv_list):
             return (2, item, 99)
     return sorted(inv_list, key=sort_key)
 
+
 app = Flask(__name__)
+
+# Suppress default Flask (werkzeug) HTTP request logs
+import logging
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
+
+# Logger setting
+logging.basicConfig(
+    filename='operation_log.txt',
+    level=logging.INFO,
+    format='%(asctime)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 HTML_TEMPLATE = '''
 <!doctype html>
@@ -79,13 +114,22 @@ HTML_TEMPLATE = '''
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; }
     label { display: inline-block; width: 80px; }
-    select, input[type=text], input[type=number] { width: 150px; margin-bottom: 10px; }
+    select, input[type=text], input[type=number] {
+      width: 150px;
+      min-width: 150px;
+      max-width: 150px;
+      box-sizing: border-box;
+      margin-bottom: 10px;
+    }
     .error { color: red; }
     .inventory-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       gap: 5px 10px;
       align-items: center;
+      width: 48px;
+      max-width: 480px;
+      min-width: 480px;
     }
     .inventory-item {
       display: flex;
@@ -122,9 +166,11 @@ HTML_TEMPLATE = '''
     }
     .form-panel {
       flex: 0 0 320px;
+      min-width: 320px;
+      max-width: 320px;
     }
     .inventory-panel {
-      flex: 1;
+      flex: 0 0 auto;
     }
   </style>
   <script>
@@ -356,42 +402,43 @@ def index():
 
 @app.route("/add", methods=["POST"])
 def add():
-    kind = request.form.get("kind", "")
-    wtype = request.form.get("wtype", "")
-    cat = request.form.get("cat", "")
-    attr = request.form.get("attr", "")
-    rate = request.form.get("rate", "")
-    count = request.form.get("count", "")
-    pad = int(request.form.get("pad", "0"))
-    error = None
-    form_data = {
-        "kind": kind,
-        "wtype": wtype,
-        "rate": rate,
-        "count": count,
-        "pad": str(pad)
-    }
-    if not cat or not attr or not count.isdigit() or int(count) < 0:
-        error = "請填寫完整且正確的資訊"
-        inventory = sort_inventory(load_inventory())
-        return render_template_string(HTML_TEMPLATE, eqpmnt=EQPMNT, inventory=inventory, form_data=form_data, error=error, highlight=None)
-    item = f"{cat}{attr}卷軸{rate},{count},"
+    form = request.form
+    kind, wtype = form.get("kind", ""), form.get("wtype", "")
+    cat, attr = form.get("cat", ""), form.get("attr", "")
+    rate, count = form.get("rate", ""), form.get("count", "")
+    pad = int(form.get("pad", "0"))
     prefix = f"{cat}{attr}卷軸{rate}"
+    item = build_item_string(cat, attr, rate, count)
+    form_data = {
+        "kind": kind, "wtype": wtype, "rate": rate,
+        "count": count, "pad": str(pad)
+    }
+
+    if not validate_form(form):
+        logging.warning(f"Form input error: cat={cat}, attr={attr}, count={count}")
+        return render_template_string(HTML_TEMPLATE, eqpmnt=EQPMNT,
+            inventory=sort_inventory(load_inventory()),
+            form_data=form_data,
+            error="請填寫完整且正確的資訊",
+            highlight=None)
 
     inventory = sort_inventory(load_inventory())
-    found = False
-    for i, entry in enumerate(inventory):
-        if entry.startswith(prefix + ","):
-            inventory[i] = item
-            found = True
-            break
-    if not found:
-        # inventory.append(item)  # 原行，註解掉避免新增
-        pass  # 數量修改僅限已有項目
+    idx = find_item_index(inventory, prefix)
 
-    inventory = sort_inventory(inventory)
-    save_inventory(inventory)
-    return render_template_string(HTML_TEMPLATE, eqpmnt=EQPMNT, inventory=inventory, form_data=form_data, error=None, highlight=item)
+    if idx >= 0:
+        prev_qty = inventory[idx].split(",")[1]
+        inventory[idx] = item
+        logging.info(f"Modified: {prefix}, count {prev_qty} > {count}")
+    else:
+        inventory.append(item)
+        logging.info(f"Added: {prefix}, count 0 > {count}")
+
+    save_inventory(sort_inventory(inventory))
+    return render_template_string(HTML_TEMPLATE, eqpmnt=EQPMNT,
+        inventory=sort_inventory(inventory),
+        form_data=form_data,
+        error=None,
+        highlight=item)
 
 if __name__ == "__main__":
   app.run(debug=True, host="127.0.0.1", port=5000)
