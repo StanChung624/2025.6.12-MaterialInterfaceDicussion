@@ -330,7 +330,6 @@ def add():
     rate = request.form.get("rate", "")
     count = request.form.get("count", "")
     pad = int(request.form.get("pad", "0"))
-    prefix_o = "O" * pad
     error = None
     form_data = {
         "kind": kind,
@@ -343,7 +342,7 @@ def add():
         error = "請填寫完整且正確的資訊"
         inventory = sort_inventory(load_inventory())
         return render_template_string(HTML_TEMPLATE, eqpmnt=EQPMNT, inventory=inventory, form_data=form_data, error=error, highlight=None)
-    item = f"{prefix_o}{cat}{attr}卷軸{rate},{count}"
+    item = f"{cat}{attr}卷軸{rate},{count}"
     prefix = item.rsplit(",", 1)[0]
 
     inventory = sort_inventory(load_inventory())
